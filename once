@@ -1,0 +1,101 @@
+#!/usr/local/bin/python
+
+import os
+import sys
+import pickle
+import datetime
+import m2secret
+
+KEY = "1234567890123456"
+
+class Data(object):
+  def __init__(self, path):
+    self.path = path
+    try:
+      self.data = pickle.load(open(self.path))
+    except Exception, e:
+      self.data = dict()
+
+  def set(self, key, value):
+    self.data[key] = value
+    self.save()
+
+  def get(self, key):
+    return self.data.get(key)
+
+  def remove(self, key):
+    if key in self.data:
+      del self.data[key]
+    self.save()
+
+  def save(self):
+    pickle.dump(self.data, open(self.path, 'w'))
+
+class Once(object):
+  def __init__(self):
+    self.data = Data(os.path.join(os.path.expanduser("~"), ".once"))
+
+  def run(self):
+    if len(sys.argv) < 2:
+      self.usage()
+    command = sys.argv[1]
+    if command == "set" and len(sys.argv) == 3:
+      self.set(sys.argv[2])
+    elif command == "get":
+      self.get()
+    else:
+      self.usage()
+
+  def set(self, password):
+    print "Setting password to %s" % (password)
+
+    secret = m2secret.Secret()
+    secret.encrypt(password, KEY)
+    data = secret.serialize()
+
+    self.data.set("password", data)
+    self.data.remove("last_get")
+
+  def get(self):
+    data = self.data.get("password")
+    now = datetime.datetime.now()
+
+    if not data:
+      print "Password not set!"
+      self.usage()
+
+    # Check date if it is already today
+    last_get = self.data.get("last_get")
+    format = "%Y-%m-%d"
+    if last_get and last_get.strftime(format) == now.strftime(format):
+      print "You already asked for your password once."
+      return
+
+    # Set the new date if we're cool
+    self.data.set("last_get", now)
+
+    # Decode
+    secret = m2secret.Secret()
+    secret.deserialize(data)
+    password = secret.decrypt(KEY)
+
+    # Copy to clipboard
+    cmd = 'echo %s | tr -d "\n" | pbcopy' % password
+    os.system(cmd)
+
+    print "Copied '%s' to clipboard." % (password)
+
+  def usage(self):
+    print "Usage: once get"
+    print "       once set <password>"
+    sys.exit(0)
+
+once = Once()
+once.run()
+
+
+
+
+
+
+# f = open(path, 'w')
